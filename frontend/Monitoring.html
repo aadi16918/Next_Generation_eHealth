@@ -1,0 +1,303 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patient Monitoring | IoMT eHealthCare</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; color: #0f172a; }
+.layout { display: flex; min-height: 100vh; }
+.sidebar { width: 250px; background: #0f172a; color: white; padding: 25px 16px; flex-shrink: 0; }
+.sidebar h2 { margin-bottom: 8px; font-size: 20px; }
+.sidebar p { color: #94a3b8; font-size: 12px; margin-bottom: 25px; }
+.sidebar a { display: block; color: #cbd5e1; text-decoration: none; padding: 13px; margin-bottom: 7px; border-radius: 7px; }
+.sidebar a:hover, .sidebar a.active { background: #0e7490; color: white; }
+main { flex: 1; min-width: 0; padding: 30px; }
+.subtitle, .muted { color: #64748b; }
+.subtitle { margin-top: 8px; }
+.muted { font-size: 13px; margin-top: 7px; }
+.toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 25px 0; }
+button { padding: 11px 14px; border: none; border-radius: 7px; background: #0891b2; color: white; cursor: pointer; }
+.status { background: #dcfce7; color: #166534; padding: 10px 14px; border-radius: 7px; font-size: 13px; }
+.patient-card, .vital-card, .panel { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 3px 12px #0f172a08; }
+.patient-card, .panel { margin-bottom: 22px; }
+.patient-info { display: flex; justify-content: space-between; align-items: center; gap: 15px; flex-wrap: wrap; }
+.vital-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 22px; }
+.vital-card p { color: #64748b; font-size: 13px; }
+.vital-value { font-size: 27px; font-weight: bold; margin: 14px 0 8px; overflow-wrap: anywhere; }
+.unit { font-size: 13px; font-weight: normal; color: #64748b; }
+.tag { padding: 5px 9px; border-radius: 20px; font-size: 12px; background: #dcfce7; color: #166534; }
+.tag.alert { background: #fee2e2; color: #991b1b; }
+.panel h2 { font-size: 18px; margin-bottom: 16px; }
+.chart-box { height: 300px; position: relative; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 650px; }
+th, td { padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 13px; }
+th { color: #64748b; background: #f8fafc; }
+@media(max-width: 900px) {
+    .sidebar { width: 210px; }
+    .vital-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media(max-width: 650px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; }
+    main { padding: 18px; }
+    .vital-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+
+<body>
+<div class="layout">
+
+<aside class="sidebar">
+    <h2>IoMT eHealthCare</h2>
+    <p>Hospital Monitoring System</p>
+    <nav>
+        <a href="/">Hospital Dashboard</a>
+        <a href="/monitoring" class="active">Patient Monitoring</a>
+        <a href="/prediction">AI Predictions &amp; XAI</a>
+        <a href="/history">Patient History</a>
+    </nav>
+</aside>
+
+<main>
+    <header>
+        <h1>Patient Monitoring</h1>
+        <p class="subtitle">Latest IoMT readings stored in the database.</p>
+    </header>
+
+    <div class="toolbar">
+        <button onclick="updateReadings()">Refresh Readings</button>
+        <span class="status" id="monitorStatus">Connecting to database...</span>
+    </div>
+
+    <section class="patient-card">
+        <div class="patient-info">
+            <div>
+                <h2 id="patientTitle">Loading latest reading...</h2>
+                <p class="muted">Synthetic IoMT sensor data</p>
+            </div>
+            <div>
+                <strong>Model status: </strong>
+                <span id="aiStatus" class="tag">Loading</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="vital-grid">
+        <div class="vital-card">
+            <p>ECG</p>
+            <div class="vital-value" id="ecg">—</div>
+            <span class="muted">ECG signal value</span>
+        </div>
+
+        <div class="vital-card">
+            <p>Blood Oxygen (SpO₂)</p>
+            <div class="vital-value" id="spo2">—</div>
+            <span class="muted">Stored oxygen reading (%)</span>
+        </div>
+
+        <div class="vital-card">
+            <p>Bioimpedance</p>
+            <div class="vital-value" id="bioimpedence">—</div>
+            <span class="muted">Stored bioimpedance value</span>
+        </div>
+
+        <div class="vital-card">
+            <p>Speed</p>
+            <div class="vital-value" id="speed">—</div>
+            <span class="muted">Stored speed value</span>
+        </div>
+
+        <div class="vital-card">
+            <p>Distance</p>
+            <div class="vital-value" id="distance">—</div>
+            <span class="muted">Stored distance value</span>
+        </div>
+
+        <div class="vital-card">
+            <p>Predicted Class</p>
+            <div class="vital-value" id="predictedClass">—</div>
+            <span class="muted">Experimental model output</span>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Recent ECG and SpO₂ Readings</h2>
+        <div class="chart-box">
+            <canvas id="vitalsChart"></canvas>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Database Readings</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Recorded At</th>
+                        <th>Reading ID</th>
+                        <th>ECG</th>
+                        <th>SpO₂</th>
+                        <th>Bioimpedance</th>
+                        <th>Predicted Class</th>
+                    </tr>
+                </thead>
+                <tbody id="readingsTable">
+                    <tr><td colspan="6">Loading readings...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <p class="muted">
+        These are synthetic readings for project demonstration, not a medical diagnosis.
+    </p>
+</main>
+</div>
+
+<script>
+let chart = null;
+
+function displayValue(value, digits = 2) {
+    if (value === null || value === undefined || value === "") return "—";
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(digits) : String(value);
+}
+
+async function updateReadings() {
+    const status = document.getElementById("monitorStatus");
+    const table = document.getElementById("readingsTable");
+
+    status.textContent = "Loading database readings...";
+
+    try {
+        const response = await fetch("/api/readings?limit=20");
+        const result = await response.json();
+
+        if (!response.ok || result.status !== "success") {
+            throw new Error(result.message || "Could not load readings.");
+        }
+
+        const readings = result.readings || [];
+        table.replaceChildren();
+
+        if (!readings.length) {
+            status.textContent = "No readings found.";
+            document.getElementById("patientTitle").textContent = "No readings available";
+            ["ecg", "spo2", "bioimpedence", "speed", "distance", "predictedClass"]
+                .forEach(id => document.getElementById(id).textContent = "—");
+            document.getElementById("aiStatus").textContent = "No data";
+            if (chart) {
+                chart.destroy();
+                chart = null;
+            }
+            table.innerHTML = '<tr><td colspan="6">No database records found.</td></tr>';
+            return;
+        }
+
+        const latest = readings[0];
+
+        document.getElementById("patientTitle").textContent =
+            "Latest Reading: " + (latest.created_at
+                ? new Date(latest.created_at).toLocaleString()
+                : latest.reading_id || "Available");
+
+        document.getElementById("ecg").textContent = displayValue(latest.ecg);
+        document.getElementById("spo2").textContent = displayValue(latest.spo2);
+        document.getElementById("bioimpedence").textContent = displayValue(latest.bioimpedence);
+        document.getElementById("speed").textContent = displayValue(latest.speed);
+        document.getElementById("distance").textContent = displayValue(latest.distance);
+        document.getElementById("predictedClass").textContent =
+            latest.predicted_class ?? "—";
+
+        const aiStatus = document.getElementById("aiStatus");
+        aiStatus.textContent = latest.predicted_class == null
+            ? "Not predicted"
+            : `Class ${latest.predicted_class}`;
+        aiStatus.className =
+            Number(latest.predicted_class) === 1 ? "tag alert" : "tag";
+
+        readings.forEach(reading => {
+            const row = document.createElement("tr");
+            const time = reading.created_at
+                ? new Date(reading.created_at).toLocaleString()
+                : "—";
+
+            [
+                time,
+                reading.reading_id ?? "—",
+                displayValue(reading.ecg),
+                displayValue(reading.spo2),
+                displayValue(reading.bioimpedence),
+                reading.predicted_class ?? "—"
+            ].forEach(value => {
+                const cell = document.createElement("td");
+                cell.textContent = value;
+                row.appendChild(cell);
+            });
+
+            table.appendChild(row);
+        });
+
+        const chronological = [...readings].reverse();
+
+        if (chart) chart.destroy();
+
+        chart = new Chart(document.getElementById("vitalsChart"), {
+            type: "line",
+            data: {
+                labels: chronological.map(r => r.created_at
+                    ? new Date(r.created_at).toLocaleTimeString()
+                    : r.reading_id),
+                datasets: [
+                    {
+                        label: "ECG",
+                        data: chronological.map(r => r.ecg),
+                        yAxisID: "y",
+                        borderColor: "#0891b2",
+                        tension: 0.3
+                    },
+                    {
+                        label: "SpO₂ (%)",
+                        data: chronological.map(r => r.spo2),
+                        yAxisID: "y1",
+                        borderColor: "#16a34a",
+                        tension: 0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        position: "left",
+                        title: { display: true, text: "ECG" }
+                    },
+                    y1: {
+                        position: "right",
+                        title: { display: true, text: "SpO₂ (%)" },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+
+        status.textContent = `Connected to backend: ${readings.length} database readings loaded.`;
+
+    } catch (error) {
+        status.textContent = "Failed to load readings: " + error.message;
+        table.innerHTML = '<tr><td colspan="6">Could not load database readings.</td></tr>';
+    }
+}
+
+updateReadings();
+</script>
+</body>
+</html>

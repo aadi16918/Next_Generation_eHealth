@@ -1,0 +1,437 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patient History | IoMT eHealthCare</title>
+
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; color: #0f172a; }
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar { width: 250px; background: #0f172a; color: white; padding: 25px 16px; flex-shrink: 0; }
+.sidebar h2 { font-size: 20px; margin-bottom: 8px; }
+.sidebar p { color: #94a3b8; font-size: 12px; margin-bottom: 25px; }
+.sidebar a { display: block; color: #cbd5e1; text-decoration: none; padding: 13px; border-radius: 7px; margin-bottom: 7px; }
+.sidebar a:hover, .sidebar a.active { background: #0e7490; color: white; }
+
+main { flex: 1; min-width: 0; padding: 30px; }
+.subtitle { color: #64748b; margin-top: 8px; }
+.toolbar, .pagination { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+label { display: block; font-size: 13px; margin-bottom: 7px; }
+input, button { padding: 11px; border-radius: 7px; border: 1px solid #cbd5e1; }
+button { background: #0891b2; color: white; border: none; cursor: pointer; }
+button:hover { background: #0e7490; }
+button:disabled { background: #94a3b8; cursor: not-allowed; }
+
+.status { padding: 12px; border-radius: 7px; background: #e0f2fe; color: #075985; font-size: 13px; margin: 15px 0; overflow-wrap: anywhere; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 22px; }
+.card, .panel { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px #1725540d; min-width: 0; }
+.card p { color: #64748b; font-size: 14px; margin-bottom: 12px; }
+.card h2 { font-size: 25px; }
+.panel h3 { margin-bottom: 18px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 850px; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5eaf2; font-size: 13px; }
+th { background: #f8fafc; color: #475569; }
+.note { color: #64748b; font-size: 12px; margin-top: 15px; }
+
+@media (max-width: 800px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; }
+    .sidebar nav { display: flex; flex-wrap: wrap; }
+    .sidebar a { margin-right: 5px; }
+    main { padding: 16px; }
+    .cards { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+
+<body>
+<div class="layout">
+<aside class="sidebar">
+    <h2>IoMT eHealthCare</h2>
+    <p>Hospital Monitoring System</p>
+    <nav>
+        <a href="/">Hospital Dashboard</a>
+        <a href="/monitoring">Patient Monitoring</a>
+        <a href="/prediction">AI Predictions &amp; XAI</a>
+        <a href="/history" class="active">Patient History</a>
+    </nav>
+</aside>
+
+<main>
+    <header>
+        <h1>Patient History &amp; Reports</h1>
+        <p class="subtitle">Browse and export readings stored in your Neon database.</p>
+    </header>
+
+    <div class="toolbar">
+        <div>
+            <label for="startDate">From date</label>
+            <input type="date" id="startDate">
+        </div>
+        <div>
+            <label for="endDate">To date</label>
+            <input type="date" id="endDate">
+        </div>
+        <button id="applyFilters">Apply Filters</button>
+        <button id="downloadAll">Download All CSV</button>
+        <button id="clearFilters">Clear Filters</button>
+    </div>
+
+    <div id="status" class="status" role="status">Connecting to database...</div>
+
+    <section class="cards">
+        <div class="card">
+            <p>Total Database Records</p>
+            <h2 id="totalReadings">0</h2>
+        </div>
+        <div class="card">
+            <p>Class 0 — Current Page</p>
+            <h2 id="normalCount">0</h2>
+        </div>
+        <div class="card">
+            <p>Class 1 — Current Page</p>
+            <h2 id="abnormalCount">0</h2>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h3>Historical Database Readings</h3>
+
+        <div class="pagination">
+            <button id="previousPage" disabled>Previous</button>
+            <span id="pageInfo">Page 1</span>
+            <button id="nextPage" disabled>Next</button>
+            <label for="pageSize">Records per page</label>
+            <select id="pageSize">
+                <option value="100">100</option>
+                <option value="500">500</option>
+                <option value="1000" selected>1000</option>
+            </select>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date &amp; Time</th>
+                        <th>Reading ID</th>
+                        <th>ECG</th>
+                        <th>SpO₂ (%)</th>
+                        <th>Bioimpedance</th>
+                        <th>Speed</th>
+                        <th>Distance</th>
+                        <th>Predicted Class</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTable">
+                    <tr><td colspan="8">Loading readings...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p class="note">
+            Synthetic IoMT readings and experimental model predictions.
+            These results are not a medical diagnosis.
+        </p>
+    </section>
+</main>
+</div>
+
+<script>
+let currentPage = 0;
+let pageSize = 1000;
+let totalRecords = 0;
+let currentReadings = [];
+let requestNumber = 0;
+
+const $ = id => document.getElementById(id);
+
+function escapeText(value) {
+    return value === null || value === undefined ? "—" : String(value);
+}
+
+function formatValue(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(2) : String(value);
+}
+
+function getDate(value) {
+    if (!value) return "";
+    return String(value).slice(0, 10);
+}
+
+function getDateRange() {
+    const start = $("startDate").value;
+    const end = $("endDate").value;
+    return { start, end };
+}
+
+async function fetchPage(offset, limit) {
+    const response = await fetch(
+        `/api/readings?limit=${limit}&offset=${offset}`
+    );
+    const data = await response.json();
+
+    if (!response.ok || data.status !== "success") {
+        throw new Error(data.error || data.message || "Could not load records.");
+    }
+
+    return data;
+}
+
+async function loadHistory(resetPage = false) {
+    if (resetPage) currentPage = 0;
+
+    const { start, end } = getDateRange();
+
+    if (start && end && start > end) {
+        $("status").textContent = "The start date cannot be after the end date.";
+        return;
+    }
+
+    const thisRequest = ++requestNumber;
+    $("status").textContent = "Loading records from Neon...";
+    $("historyTable").innerHTML =
+        '<tr><td colspan="8">Loading records...</td></tr>';
+
+    try {
+        // Count all database rows.
+        const countData = await fetchPage(0, 1);
+        if (thisRequest !== requestNumber) return;
+
+        totalRecords = countData.total;
+        $("totalReadings").textContent = totalRecords.toLocaleString();
+
+        // Date filtering is applied to the records fetched for this page.
+        // When no date filter is selected, normal database pagination is used.
+        if (!start && !end) {
+            const data = await fetchPage(currentPage * pageSize, pageSize);
+            if (thisRequest !== requestNumber) return;
+
+            currentReadings = data.readings || [];
+            renderHistory(currentReadings);
+
+            const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+            $("pageInfo").textContent =
+                `Page ${currentPage + 1} of ${totalPages}`;
+            $("previousPage").disabled = currentPage === 0;
+            $("nextPage").disabled =
+                (currentPage + 1) * pageSize >= totalRecords;
+
+            $("status").textContent =
+                `Showing ${totalRecords === 0 ? 0 : currentPage * pageSize + 1}–` +
+                `${currentPage * pageSize + currentReadings.length} of ` +
+                `${totalRecords.toLocaleString()} database records.`;
+        } else {
+            // Scan the database in batches so date filters cover all records.
+            const matches = [];
+            const batchSize = 1000;
+
+            for (let offset = 0; offset < totalRecords; offset += batchSize) {
+                const data = await fetchPage(offset, batchSize);
+                if (thisRequest !== requestNumber) return;
+
+                for (const reading of data.readings || []) {
+                    const day = getDate(reading.created_at);
+                    if ((!start || day >= start) && (!end || day <= end)) {
+                        matches.push(reading);
+                    }
+                }
+
+                $("status").textContent =
+                    `Searching records: ${Math.min(offset + batchSize, totalRecords).toLocaleString()} of ${totalRecords.toLocaleString()}...`;
+            }
+
+            totalRecords = matches.length;
+            $("totalReadings").textContent = totalRecords.toLocaleString();
+
+            const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+            currentPage = Math.min(currentPage, totalPages - 1);
+            currentReadings = matches.slice(
+                currentPage * pageSize,
+                (currentPage + 1) * pageSize
+            );
+
+            renderHistory(currentReadings);
+            $("pageInfo").textContent =
+                `Page ${currentPage + 1} of ${totalPages}`;
+            $("previousPage").disabled = currentPage === 0;
+            $("nextPage").disabled =
+                (currentPage + 1) * pageSize >= totalRecords;
+
+            // Store date-filtered results for CSV export.
+            filteredExportRecords = matches;
+
+            $("status").textContent =
+                `Date filter matched ${totalRecords.toLocaleString()} records.`;
+        }
+
+        if (!start && !end) filteredExportRecords = null;
+
+    } catch (error) {
+        if (thisRequest !== requestNumber) return;
+        console.error(error);
+        $("status").textContent = "Database error: " + error.message;
+        $("historyTable").innerHTML =
+            '<tr><td colspan="8">Unable to load records.</td></tr>';
+    }
+}
+
+function renderHistory(records) {
+    $("historyTable").replaceChildren();
+
+    $("normalCount").textContent =
+        records.filter(r => Number(r.predicted_class) === 0).length;
+    $("abnormalCount").textContent =
+        records.filter(r => Number(r.predicted_class) === 1).length;
+
+    if (!records.length) {
+        $("historyTable").innerHTML =
+            '<tr><td colspan="8">No readings match these dates.</td></tr>';
+        return;
+    }
+
+    for (const reading of records) {
+        const row = document.createElement("tr");
+        const values = [
+            reading.created_at
+                ? new Date(reading.created_at).toLocaleString() : "—",
+            reading.reading_id,
+            formatValue(reading.ecg),
+            formatValue(reading.spo2),
+            formatValue(reading.bioimpedence),
+            formatValue(reading.speed),
+            formatValue(reading.distance),
+            reading.predicted_class
+        ];
+
+        values.forEach((value, index) => {
+            const cell = document.createElement("td");
+            cell.textContent = escapeText(value);
+
+            if (index === 7) {
+                cell.style.color = Number(reading.predicted_class) === 1
+                    ? "#dc2626" : "#15803d";
+                cell.style.fontWeight = "bold";
+            }
+            row.appendChild(cell);
+        });
+
+        $("historyTable").appendChild(row);
+    }
+}
+
+let filteredExportRecords = null;
+
+async function downloadAllCSV() {
+    const button = $("downloadAll");
+    button.disabled = true;
+
+    try {
+        const { start, end } = getDateRange();
+        let records = filteredExportRecords;
+
+        // If filters have changed or no filter scan was done, fetch all pages.
+        if (records === null) {
+            const countData = await fetchPage(0, 1);
+            const total = countData.total;
+            records = [];
+            const batchSize = 1000;
+
+            for (let offset = 0; offset < total; offset += batchSize) {
+                const data = await fetchPage(offset, batchSize);
+                records.push(...(data.readings || []));
+
+                $("status").textContent =
+                    `Preparing CSV: ${records.length.toLocaleString()} of ${total.toLocaleString()}...`;
+            }
+
+            if (start || end) {
+                records = records.filter(r => {
+                    const day = getDate(r.created_at);
+                    return (!start || day >= start) && (!end || day <= end);
+                });
+            }
+        }
+
+        if (!records.length) {
+            alert("No records to download.");
+            return;
+        }
+
+        const columns = [
+            "created_at", "reading_id", "ecg", "spo2",
+            "bioimpedence", "speed", "distance", "predicted_class",
+            "class_0_probability", "class_1_probability"
+        ];
+
+        const quote = value =>
+            '"' + String(value ?? "").replace(/"/g, '""') + '"';
+
+        const csv = [
+            columns.join(","),
+            ...records.map(r => columns.map(c => quote(r[c])).join(","))
+        ].join("\r\n");
+
+        const blob = new Blob(["\uFEFF" + csv], {
+            type: "text/csv;charset=utf-8;"
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "patient_history_all_records.csv";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        $("status").textContent =
+            `CSV downloaded with ${records.length.toLocaleString()} records.`;
+    } catch (error) {
+        console.error(error);
+        alert("CSV export failed: " + error.message);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+$("previousPage").addEventListener("click", () => {
+    if (currentPage > 0) {
+        currentPage--;
+        loadHistory();
+    }
+});
+
+$("nextPage").addEventListener("click", () => {
+    currentPage++;
+    loadHistory();
+});
+
+$("pageSize").addEventListener("change", event => {
+    pageSize = Number(event.target.value);
+    currentPage = 0;
+    loadHistory();
+});
+
+$("applyFilters").addEventListener("click", () => {
+    filteredExportRecords = null;
+    loadHistory(true);
+});
+
+$("clearFilters").addEventListener("click", () => {
+    $("startDate").value = "";
+    $("endDate").value = "";
+    filteredExportRecords = null;
+    loadHistory(true);
+});
+
+$("downloadAll").addEventListener("click", downloadAllCSV);
+
+loadHistory(true);
+</script>
+</body>
+</html>

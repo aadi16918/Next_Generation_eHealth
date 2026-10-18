@@ -1,0 +1,12 @@
+
+Flask
+gunicorn
+psycopg[binary]
+python-dotenv
+numpy
+pandas
+scikit-learn
+joblib
+shap
+lime
+matplotlib

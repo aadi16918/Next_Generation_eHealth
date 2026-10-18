@@ -1,0 +1,2 @@
+ecg,bioimpedence,speed,distance,spo2,original_prediction,counterfactual_prediction,original_probability,counterfactual_probability,standardized_distance
+58.25683549933165,13.039809124229755,1.1627210930348955,2.289144745250871,96.9132342551114,0,1,0.0,1.0,0.7138418197244856
