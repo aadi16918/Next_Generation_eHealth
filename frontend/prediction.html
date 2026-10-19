@@ -267,7 +267,28 @@ form.addEventListener("submit", async function(event) {
         message.textContent = "Requesting prediction...";
         displayMeasurements(data);
 
+        
+form.addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    try {
+        const data = getMeasurements();
+
+        // Show submitted values immediately
+        displayMeasurements(data);
+        message.textContent = "Requesting prediction...";
+        predictionResult.textContent = "Processing...";
+        predictionDescription.textContent = "Waiting for model response.";
+
         const result = await callApi("/api/predict", data);
+
+        displayPrediction(result);
+        message.textContent = result.notice || "Prediction completed.";
+    } catch (error) {
+        message.textContent = "Prediction error: " + error.message;
+    }
+});
+
         displayPrediction(result);
         message.textContent = result.notice || "Prediction completed.";
     } catch (error) {

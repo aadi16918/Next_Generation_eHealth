@@ -2,289 +2,794 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IoMT eHealthCare Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="IoMT healthcare dashboard with live synthetic readings and AI predictions">
+  <title>Hospital Dashboard | IoMT eHealth</title>
 
-<style>
-* { box-sizing: border-box; }
-body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; display: flex; min-height: 100vh; color: #0f172a; }
-.sidebar { width: 250px; min-height: 100vh; background: #0f172a; color: white; padding: 25px 16px; flex-shrink: 0; }
-.sidebar h2 { margin-bottom: 8px; font-size: 20px; }
-.sidebar p { color: #94a3b8; margin-bottom: 25px; font-size: 12px; }
-.sidebar nav a { display: block; color: #cbd5e1; text-decoration: none; padding: 13px; margin-bottom: 8px; border-radius: 7px; }
-.sidebar nav a:hover, .sidebar nav a.active { background: #0e7490; color: white; }
-main { flex: 1; min-width: 0; padding: 30px; }
-.subtitle { color: #64748b; }
-.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; margin: 24px 0; }
-.metric, .chart-panel { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 3px 12px #0f172a08; min-width: 0; }
-.metric p, .chart-panel p { color: #64748b; font-size: 13px; }
-.metric h2 { font-size: 27px; overflow-wrap: anywhere; }
-.analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 24px 0; }
-.chart-box { position: relative; height: 270px; }
-.status { background: #e0f2fe; padding: 13px; border-radius: 8px; color: #075985; font-size: 13px; overflow-wrap: anywhere; }
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 700px; }
-th, td { padding: 11px; text-align: left; border-bottom: 1px solid #e5eaf2; font-size: 13px; }
-th { background: #f8fafc; color: #475569; }
-button { background: #0891b2; color: white; border: none; border-radius: 7px; padding: 10px 14px; cursor: pointer; }
-button:hover { background: #0e7490; }
-.note { background: #eff6ff; padding: 14px; border-radius: 8px; color: #1e40af; font-size: 13px; line-height: 1.6; }
-@media(max-width: 1000px) { .metric-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-@media(max-width: 700px) {
-    body { display: block; }
-    .sidebar { width: 100%; min-height: auto; }
-    .analytics-grid, .metric-grid { grid-template-columns: 1fr; }
-    main { padding: 18px; }
-}
-</style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      --navy: #10192d;
+      --blue: #0799b8;
+      --bg: #f0f4f8;
+      --white: #ffffff;
+      --text: #14213d;
+      --muted: #64748b;
+      --green: #16a34a;
+      --red: #e54848;
+      --border: #e2e8f0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .layout { display: flex; min-height: 100vh; }
+
+    .sidebar {
+      width: 298px;
+      flex-shrink: 0;
+      background: var(--navy);
+      color: white;
+      padding: 18px;
+    }
+
+    .brand {
+      margin: 8px 10px 28px;
+      font-size: 21px;
+      font-weight: 700;
+    }
+
+    .sidebar nav {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sidebar a {
+      display: block;
+      padding: 16px;
+      color: #e7edf8;
+      text-decoration: none;
+      border-radius: 9px;
+      font-size: 16px;
+    }
+
+    .sidebar a:hover,
+    .sidebar a.active {
+      background: #117d98;
+      color: white;
+    }
+
+    main {
+      flex: 1;
+      min-width: 0;
+      padding: 28px 34px;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 29px; }
+    h2 { font-size: 20px; margin: 0 0 12px; }
+    .subtitle { color: var(--muted); margin: 0 0 20px; line-height: 1.5; }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 9px;
+      background: var(--blue);
+      color: white;
+      padding: 13px 18px;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    button:hover { filter: brightness(.93); }
+    button:disabled { opacity: .6; cursor: wait; }
+
+    .status {
+      padding: 13px 16px;
+      border-radius: 9px;
+      background: #e0f2fe;
+      color: #075985;
+      flex: 1;
+      min-width: 220px;
+      font-size: 14px;
+    }
+
+    .status.error { background: #fee2e2; color: #991b1b; }
+
+    .status.warning { background: #fef3c7; color: #92400e; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+      margin: 20px 0;
+    }
+
+    .card {
+      background: var(--white);
+      padding: 24px;
+      border-radius: 15px;
+      box-shadow: 0 4px 18px rgba(15, 23, 42, .035);
+      min-width: 0;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .metric-value {
+      margin-top: 22px;
+      font-size: 30px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .green { color: var(--green); }
+    .red { color: var(--red); }
+    .blue { color: var(--blue); }
+
+    .prediction-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .prediction-result {
+      padding: 12px;
+      border-radius: 9px;
+      background: #f1f5f9;
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .probability-track {
+      height: 9px;
+      border-radius: 10px;
+      background: #e2e8f0;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .probability-fill {
+      height: 100%;
+      width: 0;
+      transition: width .3s ease;
+    }
+
+    .class0-fill { background: var(--green); }
+    .class1-fill { background: var(--red); }
+
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+      margin-top: 22px;
+    }
+
+    .chart-card { min-height: 350px; }
+    .chart-container { position: relative; height: 270px; margin-top: 22px; }
+
+    .section-note {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .table-card { margin-top: 22px; }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      min-width: 700px;
+      border-collapse: collapse;
+      margin-top: 14px;
+    }
+
+    th, td {
+      padding: 13px 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      background: #f8fafc;
+    }
+
+    .tag {
+      display: inline-block;
+      border-radius: 20px;
+      padding: 5px 9px;
+      background: #dcfce7;
+      color: #166534;
+      font-weight: 700;
+    }
+
+    .tag.alert { background: #fee2e2; color: #991b1b; }
+    .tag.neutral { background: #e2e8f0; color: #334155; }
+
+    .footer-note {
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1100px) {
+      .sidebar { width: 230px; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .charts { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 650px) {
+      .layout { flex-direction: column; }
+      .sidebar { width: 100%; padding: 14px; }
+      .brand { margin-bottom: 14px; }
+      .sidebar nav { flex-direction: row; flex-wrap: wrap; }
+      .sidebar a { padding: 10px; font-size: 13px; }
+      main { padding: 20px 14px; }
+      h1 { font-size: 24px; }
+      .grid { grid-template-columns: 1fr; }
+      .metric-value { font-size: 27px; }
+    }
+  </style>
 </head>
 
 <body>
-<aside class="sidebar">
-    <h2>IoMT eHealthCare</h2>
-    <p>Hospital Monitoring System</p>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">IoMT eHealthCare</div>
     <nav>
-        <a href="/" class="active">Hospital Dashboard</a>
-        <a href="/monitoring">Patient Monitoring</a>
-        <a href="/prediction">AI Predictions &amp; XAI</a>
-        <a href="/history">Patient History</a>
+      <a href="/" class="active">Hospital Dashboard</a>
+      <a href="/monitoring">Patient Monitoring</a>
+      <a href="/prediction">AI Predictions &amp; XAI</a>
+      <a href="/history">Patient History</a>
     </nav>
-</aside>
+  </aside>
 
-<main>
+  <main>
     <header>
-        <h1>Hospital Analytics Dashboard</h1>
-        <p class="subtitle">Database readings, model predictions and IoMT trends</p>
-        <button id="refreshButton">Refresh Dashboard</button>
-        <div id="status" class="status" style="margin-top:15px">Connecting to database...</div>
+      <h1>Hospital Dashboard</h1>
+      <p class="subtitle">
+        Database readings, model predictions and IoMT trends
+      </p>
     </header>
 
-    <section class="metric-grid">
-        <div class="metric">
-            <p>Total Database Readings</p>
-            <h2 id="totalReadings">—</h2>
-        </div>
-        <div class="metric">
-            <p>Class 0 — Latest Batch</p>
-            <h2 id="class0" style="color:#15966a">—</h2>
-        </div>
-        <div class="metric">
-            <p>Class 1 — Latest Batch</p>
-            <h2 id="class1" style="color:#dc4545">—</h2>
-        </div>
-        <div class="metric">
-            <p>Records Loaded for Charts</p>
-            <h2 id="loadedReadings">—</h2>
-        </div>
+    <div class="toolbar">
+      <button id="refreshButton" type="button">Refresh Dashboard</button>
+      <div class="status" id="connectionStatus" role="status">
+        Connecting to Neon...
+      </div>
+    </div>
+
+    <section class="grid">
+      <article class="card">
+        <div class="metric-label">Total Database Readings</div>
+        <div class="metric-value" id="totalReadings">—</div>
+      </article>
+
+      <article class="card">
+        <div class="metric-label">Class 0 — Latest Batch</div>
+        <div class="metric-value green" id="class0Count">—</div>
+      </article>
+
+      <article class="card">
+        <div class="metric-label">Class 1 — Latest Batch</div>
+        <div class="metric-value red" id="class1Count">—</div>
+      </article>
+
+      <article class="card">
+        <div class="metric-label">Records Loaded for Charts</div>
+        <div class="metric-value" id="loadedCount">—</div>
+      </article>
     </section>
 
-    <section class="analytics-grid">
-        <div class="chart-panel">
-            <h3>Prediction Distribution</h3>
-            <p>Predicted classes in the latest 1,000 records</p>
-            <div class="chart-box"><canvas id="predictionChart"></canvas></div>
+    <section class="grid">
+      <article class="card prediction-card">
+        <h2>Latest AI Prediction</h2>
+        <div class="section-note" id="latestReadingId">Waiting for data...</div>
+        <div class="prediction-result" id="latestPrediction">—</div>
+
+        <div>
+          <div class="metric-label">
+            Class 0 probability: <strong id="prob0">—</strong>
+          </div>
+          <div class="probability-track">
+            <div class="probability-fill class0-fill" id="prob0Bar"></div>
+          </div>
         </div>
 
-        <div class="chart-panel">
-            <h3>Recent ECG Readings</h3>
-            <p>ECG values from the latest 20 database records</p>
-            <div class="chart-box"><canvas id="ecgChart"></canvas></div>
+        <div>
+          <div class="metric-label">
+            Class 1 probability: <strong id="prob1">—</strong>
+          </div>
+          <div class="probability-track">
+            <div class="probability-fill class1-fill" id="prob1Bar"></div>
+          </div>
         </div>
 
-        <div class="chart-panel">
-            <h3>Recent SpO₂ Readings</h3>
-            <p>Stored oxygen readings from the latest 20 records</p>
-            <div class="chart-box"><canvas id="spo2Chart"></canvas></div>
-        </div>
+        <div class="section-note" id="latestTimestamp">Timestamp: —</div>
+      </article>
 
-        <div class="chart-panel">
-            <h3>Recent Bioimpedance</h3>
-            <p>Bioimpedance values from the latest 20 records</p>
-            <div class="chart-box"><canvas id="bioChart"></canvas></div>
-        </div>
+      <article class="card prediction-card">
+        <h2>Latest Measurements</h2>
+        <div class="metric-label">ECG <strong id="latestEcg">—</strong></div>
+        <div class="metric-label">SpO₂ <strong id="latestSpo2">—</strong></div>
+        <div class="metric-label">Bioimpedance <strong id="latestBio">—</strong></div>
+        <div class="metric-label">Speed <strong id="latestSpeed">—</strong></div>
+        <div class="metric-label">Distance <strong id="latestDistance">—</strong></div>
+        <p class="section-note">
+          Values are the latest stored synthetic readings.
+        </p>
+      </article>
     </section>
 
-    <section class="chart-panel">
-        <h3>Latest Database Readings</h3>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date &amp; Time</th>
-                        <th>Reading ID</th>
-                        <th>ECG</th>
-                        <th>SpO₂</th>
-                        <th>Bioimpedance</th>
-                        <th>Speed</th>
-                        <th>Distance</th>
-                        <th>Predicted Class</th>
-                    </tr>
-                </thead>
-                <tbody id="recentTable">
-                    <tr><td colspan="8">Loading readings...</td></tr>
-                </tbody>
-            </table>
+    <section class="charts">
+      <article class="card chart-card">
+        <h2>Prediction Distribution</h2>
+        <p class="section-note" id="distributionNote">
+          Predictions across the latest loaded records
+        </p>
+        <div class="chart-container">
+          <canvas id="predictionChart"></canvas>
         </div>
+      </article>
+
+      <article class="card chart-card">
+        <h2>Recent ECG Readings</h2>
+        <p class="section-note">ECG values from the latest database records</p>
+        <div class="chart-container">
+          <canvas id="ecgChart"></canvas>
+        </div>
+      </article>
+
+      <article class="card chart-card">
+        <h2>Recent SpO₂ Readings</h2>
+        <p class="section-note">Stored oxygen saturation measurements</p>
+        <div class="chart-container">
+          <canvas id="spo2Chart"></canvas>
+        </div>
+      </article>
+
+      <article class="card chart-card">
+        <h2>AI Class 1 Probability</h2>
+        <p class="section-note">Saved Class 1 probabilities for recent records</p>
+        <div class="chart-container">
+          <canvas id="probabilityChart"></canvas>
+        </div>
+      </article>
     </section>
 
-    <p class="note">
-        Statistics are retrieved from your Neon database through Flask.
-        Class counts and charts describe the latest records loaded, not all
-        historical records. The model uses synthetic data and is experimental,
-        not a medical diagnosis.
+    <section class="card table-card">
+      <h2>Latest Database Records</h2>
+      <p class="section-note">
+        The newest readings and their saved model predictions.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Reading ID</th>
+              <th>Timestamp</th>
+              <th>ECG</th>
+              <th>SpO₂</th>
+              <th>Bioimpedance</th>
+              <th>Prediction</th>
+              <th>Class 1 Probability</th>
+            </tr>
+          </thead>
+          <tbody id="readingsTable">
+            <tr><td colspan="7">Loading records...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="footer-note">
+      Auto-refresh: every 5 seconds. This dashboard displays synthetic
+      experimental data and model outputs; it is not a medical diagnostic tool.
+      <span id="lastUpdated"></span>
     </p>
-</main>
+  </main>
+</div>
 
 <script>
-let charts = {};
+  "use strict";
 
-function formatNumber(value) {
-    return Number(value || 0).toLocaleString();
-}
+  const API_BASE = ""; // Same-origin Flask API
+  const REFRESH_INTERVAL = 5000;
+  const CHART_LIMIT = 1000;
+  const TABLE_LIMIT = 12;
 
-function formatValue(value) {
+  let refreshInProgress = false;
+
+  const byId = (id) => document.getElementById(id);
+
+  function number(value, digits = 2) {
     if (value === null || value === undefined || value === "") return "—";
-    const n = Number(value);
-    return Number.isFinite(n) ? n.toFixed(2) : String(value);
-}
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed.toFixed(digits) : "—";
+  }
 
-function createChart(id, type, labels, datasets, extraOptions = {}) {
-    if (charts[id]) charts[id].destroy();
+  function integer(value) {
+    return Number(value || 0).toLocaleString();
+  }
 
-    charts[id] = new Chart(document.getElementById(id), {
-        type,
-        data: { labels, datasets },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            ...extraOptions
-        }
+  function percent(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? (parsed * 100).toFixed(2) + "%" : "—";
+  }
+
+  function setStatus(message, type = "normal") {
+    const element = byId("connectionStatus");
+    element.textContent = message;
+    element.className = "status" + (type === "error" ? " error" :
+      type === "warning" ? " warning" : "");
+  }
+
+  function safeText(value) {
+    return value === null || value === undefined || value === ""
+      ? "—"
+      : String(value);
+  }
+
+  function formatDate(value) {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) :
+      parsed.toLocaleString();
+  }
+
+  function makeChart(canvasId, type, data, options = {}) {
+    return new Chart(byId(canvasId), {
+      type,
+      data,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: type !== "line" },
+          tooltip: { enabled: true }
+        },
+        scales: type === "doughnut" ? {} : {
+          x: {
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+          },
+          y: { beginAtZero: false }
+        },
+        ...options
+      }
     });
-}
+  }
 
-async function loadDashboard() {
-    const button = document.getElementById("refreshButton");
-    button.disabled = true;
-    document.getElementById("status").textContent =
-        "Loading database statistics and recent readings...";
+  const predictionChart = makeChart("predictionChart", "doughnut", {
+    labels: ["Class 0", "Class 1", "No prediction"],
+    datasets: [{
+      data: [0, 0, 0],
+      backgroundColor: ["#16a34a", "#e54848", "#94a3b8"],
+      borderWidth: 2,
+      borderColor: "#ffffff"
+    }]
+  });
+
+  const ecgChart = makeChart("ecgChart", "line", {
+    labels: [],
+    datasets: [{
+      label: "ECG",
+      data: [],
+      borderColor: "#0799b8",
+      backgroundColor: "rgba(7,153,184,.12)",
+      tension: 0.25,
+      pointRadius: 2,
+      fill: false
+    }]
+  });
+
+  const spo2Chart = makeChart("spo2Chart", "line", {
+    labels: [],
+    datasets: [{
+      label: "SpO₂",
+      data: [],
+      borderColor: "#16a34a",
+      tension: 0.25,
+      pointRadius: 2
+    }]
+  });
+
+  const probabilityChart = makeChart("probabilityChart", "line", {
+    labels: [],
+    datasets: [{
+      label: "Class 1 probability (%)",
+      data: [],
+      borderColor: "#e54848",
+      tension: 0.25,
+      pointRadius: 2
+    }]
+  }, {
+    scales: {
+      y: { min: 0, max: 100, ticks: { callback: value => value + "%" } }
+    }
+  });
+
+  async function getJson(url) {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      headers: { "Accept": "application/json" }
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed (${response.status})`);
+    }
+
+    const data = await response.json();
+
+    if (data.status === "error") {
+      throw new Error(data.message || "API returned an error.");
+    }
+
+    return data;
+  }
+
+  async function getHealth() {
+    try {
+      const health = await getJson(`${API_BASE}/api/health`);
+      return health.database === "error" ? false : true;
+    } catch {
+      return false;
+    }
+  }
+
+  function updateLatestPrediction(reading) {
+    if (!reading) {
+      byId("latestPrediction").textContent = "No readings available";
+      byId("latestReadingId").textContent = "No saved readings found";
+      byId("prob0").textContent = "—";
+      byId("prob1").textContent = "—";
+      byId("prob0Bar").style.width = "0%";
+      byId("prob1Bar").style.width = "0%";
+      return;
+    }
+
+    byId("latestReadingId").textContent =
+      "Reading ID: " + safeText(reading.reading_id);
+
+    const prediction = reading.predicted_class;
+    const hasPrediction = prediction !== null && prediction !== undefined;
+
+    byId("latestPrediction").textContent = hasPrediction
+      ? `Class ${prediction}`
+      : "Prediction not stored";
+
+    byId("latestPrediction").style.color =
+      !hasPrediction ? "#64748b" :
+      Number(prediction) === 1 ? "#e54848" : "#16a34a";
+
+    const p0 = reading.class_0_probability;
+    const p1 = reading.class_1_probability;
+
+    byId("prob0").textContent = percent(p0);
+    byId("prob1").textContent = percent(p1);
+
+    byId("prob0Bar").style.width =
+      p0 == null ? "0%" : `${Math.max(0, Math.min(100, Number(p0) * 100))}%`;
+
+    byId("prob1Bar").style.width =
+      p1 == null ? "0%" : `${Math.max(0, Math.min(100, Number(p1) * 100))}%`;
+
+    byId("latestTimestamp").textContent =
+      "Timestamp: " + formatDate(reading.created_at);
+
+    byId("latestEcg").textContent = number(reading.ecg);
+    byId("latestSpo2").textContent = number(reading.spo2);
+    byId("latestBio").textContent = number(reading.bioimpedence);
+    byId("latestSpeed").textContent = number(reading.speed);
+    byId("latestDistance").textContent = number(reading.distance);
+  }
+
+  function updateStatistics(readings, apiData) {
+    const total = apiData.total ?? apiData.total_count ?? null;
+
+    byId("totalReadings").textContent =
+      total !== null ? integer(total) : "Not provided by API";
+
+    byId("loadedCount").textContent = integer(readings.length);
+
+    let class0 = 0;
+    let class1 = 0;
+    let unclassified = 0;
+
+    for (const reading of readings) {
+      if (reading.predicted_class === null ||
+          reading.predicted_class === undefined) {
+        unclassified++;
+      } else if (Number(reading.predicted_class) === 0) {
+        class0++;
+      } else if (Number(reading.predicted_class) === 1) {
+        class1++;
+      } else {
+        unclassified++;
+      }
+    }
+
+    byId("class0Count").textContent = integer(class0);
+    byId("class1Count").textContent = integer(class1);
+
+    predictionChart.data.datasets[0].data = [
+      class0, class1, unclassified
+    ];
+    predictionChart.update("none");
+
+    byId("distributionNote").textContent =
+      `Saved predictions across ${integer(readings.length)} latest records`;
+  }
+
+  function updateCharts(readings) {
+    // API returns newest first. Reverse for chronological chart display.
+    const chronological = [...readings].reverse();
+
+    const labels = chronological.map((reading, index) => {
+      if (reading.created_at) {
+        const date = new Date(reading.created_at);
+        if (!Number.isNaN(date.getTime())) {
+          return date.toLocaleTimeString();
+        }
+      }
+      return `Reading ${index + 1}`;
+    });
+
+    ecgChart.data.labels = labels;
+    ecgChart.data.datasets[0].data = chronological.map(
+      reading => reading.ecg == null ? null : Number(reading.ecg)
+    );
+    ecgChart.update("none");
+
+    spo2Chart.data.labels = labels;
+    spo2Chart.data.datasets[0].data = chronological.map(
+      reading => reading.spo2 == null ? null : Number(reading.spo2)
+    );
+    spo2Chart.update("none");
+
+    probabilityChart.data.labels = labels;
+    probabilityChart.data.datasets[0].data = chronological.map(
+      reading => reading.class_1_probability == null
+        ? null : Number(reading.class_1_probability) * 100
+    );
+    probabilityChart.update("none");
+  }
+
+  function updateTable(readings) {
+    const tbody = byId("readingsTable");
+    tbody.replaceChildren();
+
+    if (!readings.length) {
+      const row = tbody.insertRow();
+      const cell = row.insertCell();
+      cell.colSpan = 7;
+      cell.textContent = "No readings found.";
+      return;
+    }
+
+    for (const reading of readings.slice(0, TABLE_LIMIT)) {
+      const row = tbody.insertRow();
+
+      const values = [
+        reading.reading_id,
+        formatDate(reading.created_at),
+        number(reading.ecg),
+        number(reading.spo2),
+        number(reading.bioimpedence),
+      ];
+
+      for (const value of values) {
+        const cell = row.insertCell();
+        cell.textContent = safeText(value);
+      }
+
+      const predictionCell = row.insertCell();
+      if (reading.predicted_class === null ||
+          reading.predicted_class === undefined) {
+        const tag = document.createElement("span");
+        tag.className = "tag neutral";
+        tag.textContent = "Not stored";
+        predictionCell.appendChild(tag);
+      } else {
+        const tag = document.createElement("span");
+        tag.className = Number(reading.predicted_class) === 1
+          ? "tag alert" : "tag";
+        tag.textContent = `Class ${reading.predicted_class}`;
+        predictionCell.appendChild(tag);
+      }
+
+      const probabilityCell = row.insertCell();
+      probabilityCell.textContent = percent(reading.class_1_probability);
+    }
+  }
+
+  async function refreshDashboard() {
+    if (refreshInProgress) return;
+    refreshInProgress = true;
+    byId("refreshButton").disabled = true;
 
     try {
-        // The API reports the full database count and returns up to 1,000 rows.
-        const response = await fetch("/api/readings?limit=1000&offset=0");
-        const result = await response.json();
+      // Existing API: /api/readings?limit=1000
+      const apiData = await getJson(
+        `${API_BASE}/api/readings?limit=${CHART_LIMIT}&_=${Date.now()}`
+      );
 
-        if (!response.ok || result.status !== "success") {
-            throw new Error(result.error || result.message || "Database request failed.");
-        }
+      const readings = Array.isArray(apiData.readings)
+        ? apiData.readings
+        : [];
 
-        const readings = result.readings || [];
-        const total = result.total ?? result.count ?? readings.length;
+      updateStatistics(readings, apiData);
+      updateCharts(readings);
+      updateTable(readings);
 
-        document.getElementById("totalReadings").textContent =
-            formatNumber(total);
-        document.getElementById("loadedReadings").textContent =
-            formatNumber(readings.length);
+      // Prefer the first row because the API orders newest first.
+      const latest = readings.length ? readings[0] : null;
+      updateLatestPrediction(latest);
 
-        const class0 = readings.filter(r => Number(r.predicted_class) === 0).length;
-        const class1 = readings.filter(r => Number(r.predicted_class) === 1).length;
+      const total = apiData.total ?? apiData.total_count;
+      const totalMessage = total !== undefined
+        ? `${integer(total)} total records`
+        : `${integer(readings.length)} records returned`;
 
-        document.getElementById("class0").textContent = formatNumber(class0);
-        document.getElementById("class1").textContent = formatNumber(class1);
+      const dbOk = await getHealth();
 
-        createChart("predictionChart", "doughnut",
-            ["Class 0", "Class 1"],
-            [{
-                data: [class0, class1],
-                backgroundColor: ["#16a34a", "#dc4545"]
-            }]
+      if (dbOk) {
+        setStatus(
+          `Connected successfully. ${totalMessage}; ${integer(readings.length)} loaded for dashboard statistics.`
         );
+      } else {
+        setStatus(
+          `Readings loaded, but the database health check needs attention. ${totalMessage}.`,
+          "warning"
+        );
+      }
 
-        // API orders newest first. Reverse for left-to-right chronological charts.
-        const recent = readings.slice(0, 20).reverse();
-        const labels = recent.map((r, i) => {
-            if (r.created_at) {
-                const date = new Date(r.created_at);
-                return Number.isNaN(date.getTime())
-                    ? `Reading ${i + 1}` : date.toLocaleTimeString();
-            }
-            return `Reading ${i + 1}`;
-        });
-
-        createChart("ecgChart", "line", labels, [{
-            label: "ECG",
-            data: recent.map(r => Number(r.ecg)),
-            borderColor: "#089eaa",
-            tension: 0.2,
-            pointRadius: 2
-        }]);
-
-        createChart("spo2Chart", "line", labels, [{
-            label: "SpO₂",
-            data: recent.map(r => Number(r.spo2)),
-            borderColor: "#16a34a",
-            tension: 0.2,
-            pointRadius: 2
-        }]);
-
-        createChart("bioChart", "line", labels, [{
-            label: "Bioimpedance",
-            data: recent.map(r => Number(r.bioimpedence)),
-            borderColor: "#6366f1",
-            tension: 0.2,
-            pointRadius: 2
-        }]);
-
-        const table = document.getElementById("recentTable");
-        table.replaceChildren();
-
-        if (!readings.length) {
-            table.innerHTML = '<tr><td colspan="8">No database readings found.</td></tr>';
-        } else {
-            readings.slice(0, 20).forEach(r => {
-                const row = document.createElement("tr");
-                const values = [
-                    r.created_at ? new Date(r.created_at).toLocaleString() : "—",
-                    r.reading_id,
-                    formatValue(r.ecg),
-                    formatValue(r.spo2),
-                    formatValue(r.bioimpedence),
-                    formatValue(r.speed),
-                    formatValue(r.distance),
-                    r.predicted_class
-                ];
-
-                values.forEach((value, i) => {
-                    const cell = document.createElement("td");
-                    cell.textContent = value == null ? "—" : String(value);
-
-                    if (i === 7) {
-                        cell.style.color = Number(r.predicted_class) === 1
-                            ? "#dc2626" : "#15803d";
-                        cell.style.fontWeight = "bold";
-                    }
-                    row.appendChild(cell);
-                });
-                table.appendChild(row);
-            });
-        }
-
-        document.getElementById("status").textContent =
-            `Connected successfully. ${formatNumber(total)} total records in Neon; ` +
-            `${formatNumber(readings.length)} loaded for dashboard statistics.`;
+      byId("lastUpdated").textContent =
+        " Last updated: " + new Date().toLocaleTimeString();
 
     } catch (error) {
-        console.error(error);
-        document.getElementById("status").textContent =
-            "Could not load dashboard data: " + error.message;
+      console.error("Dashboard refresh failed:", error);
+      setStatus(
+        `Could not refresh dashboard: ${error.message}. Check the Flask API and connection.`,
+        "error"
+      );
     } finally {
-        button.disabled = false;
+      refreshInProgress = false;
+      byId("refreshButton").disabled = false;
     }
-}
+  }
 
-document.getElementById("refreshButton").addEventListener("click", loadDashboard);
-loadDashboard();
+  byId("refreshButton").addEventListener("click", refreshDashboard);
+
+  // Initial load followed by automatic refresh every five seconds.
+  refreshDashboard();
+  setInterval(refreshDashboard, REFRESH_INTERVAL);
 </script>
 </body>
 </html>

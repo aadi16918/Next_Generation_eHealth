@@ -1,116 +1,103 @@
 
 import os
 import json
-import uuid
+from pathlib import Path
+from datetime import date, datetime
+
 import joblib
 import numpy as np
 import pandas as pd
-import shap
 import psycopg
+import shap
 
-from datetime import date, datetime
-from sklearn.preprocessing import StandardScaler
+from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_DIR = BASE_DIR / "frontend"
 
-# ==================================================
-# 1. CONFIGURATION
-# ==================================================
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
-MODEL_PATH = os.path.join(BASE_DIR, "models", "best_model.pkl")
-SCALER_PATH = os.path.join(BASE_DIR, "models", "scaler.pkl")
-METADATA_PATH = os.path.join(BASE_DIR, "models", "model_metadata.json")
-DATASET_PATH = os.path.join(
-    BASE_DIR, "dataset", "synthetic_IoMT_70.csv"
-)
-
-from dotenv import load_dotenv
-
-load_dotenv()
-from dotenv import load_dotenv
-
-load_dotenv()
+load_dotenv(BASE_DIR / ".env")
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+MODEL_PATH = BASE_DIR / "models" / "best_model.pkl"
+SCALER_PATH = BASE_DIR / "models" / "scaler.pkl"
+METADATA_PATH = BASE_DIR / "models" / "model_metadata.json"
+DATASET_PATH = BASE_DIR / "dataset" / "synthetic_IoMT_70.csv"
 
 app = Flask(
     __name__,
-    static_folder=FRONTEND_DIR,
-    static_url_path="/frontend"
+    static_folder=str(FRONTEND_DIR),
+    static_url_path="/frontend",
 )
 CORS(app)
 
-
-# ==================================================
-# 2. LOAD MODEL AND METADATA
-# ==================================================
-
 model = joblib.load(MODEL_PATH)
-scaler = joblib.load(SCALER_PATH)
 
-with open(METADATA_PATH, "r") as file:
+with open(METADATA_PATH, "r", encoding="utf-8") as file:
     metadata = json.load(file)
 
 FEATURES = metadata["feature_columns"]
 REQUIRES_SCALING = metadata.get("requires_scaling", False)
+scaler = (
+    joblib.load(SCALER_PATH)
+    if REQUIRES_SCALING
+    else None
+)
 
 
 def prepare_input(data):
-    """Apply scaling only when the selected model requires it."""
-    frame = pd.DataFrame(data, columns=FEATURES)
-
-    if REQUIRES_SCALING:
-        return scaler.transform(frame)
-
-    return frame
-
-
-def parse_measurements(data):
-    """Validate the five required input measurements."""
     if not isinstance(data, dict):
         raise ValueError("Send measurements as a JSON object.")
 
-    values = []
+    missing = [feature for feature in FEATURES if feature not in data]
+    if missing:
+        raise ValueError(f"Missing measurements: {', '.join(missing)}")
 
+    values = {}
     for feature in FEATURES:
-        if feature not in data:
-            raise KeyError(feature)
+        try:
+            value = float(data[feature])
+        except (TypeError, ValueError):
+            raise ValueError(f"{feature} must be a number.")
 
-        values.append(float(data[feature]))
+        if not np.isfinite(value):
+            raise ValueError(f"{feature} must be a finite number.")
 
-    if not np.all(np.isfinite(values)):
-        raise ValueError("Measurements must be finite numbers.")
+        values[feature] = value
 
-    return pd.DataFrame([values], columns=FEATURES)
-
-
-def get_class_probabilities(model_input):
-    """Return probabilities if supported by the selected model."""
-    if not hasattr(model, "predict_proba"):
-        return {}
-
-    probabilities = model.predict_proba(model_input)[0]
-
-    return {
-        str(label): float(probability)
-        for label, probability in zip(model.classes_, probabilities)
-    }
+    frame = pd.DataFrame([values], columns=FEATURES)
+    transformed = scaler.transform(frame) if REQUIRES_SCALING else frame
+    return frame, transformed
 
 
-def error_response(message, status_code=400):
-    return jsonify({
-        "status": "error",
-        "message": message
-    }), status_code
+def get_probabilities(model_input):
+    result = {"class_0_probability": None, "class_1_probability": None}
+
+    if hasattr(model, "predict_proba"):
+        probabilities = model.predict_proba(model_input)[0]
+        for label, probability in zip(model.classes_, probabilities):
+            if int(label) == 0:
+                result["class_0_probability"] = float(probability)
+            elif int(label) == 1:
+                result["class_1_probability"] = float(probability)
+
+    return result
 
 
-# ==================================================
-# 3. FRONTEND PAGES
-# ==================================================
+def json_safe(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
 
+
+def error_response(message, status=400):
+    return jsonify({"status": "error", "message": message}), status
+
+
+# Website pages
 @app.get("/")
 @app.get("/dashboard")
 def dashboard():
@@ -132,52 +119,34 @@ def history_page():
     return app.send_static_file("history.html")
 
 
-# ==================================================
-# 4. API HOME
-# ==================================================
+# Backend status
+@app.get("/api/health")
+def health_check():
+    database_status = "not_configured"
 
-@app.get("/api")
-def api_home():
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL, connect_timeout=5) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+            database_status = "connected"
+        except Exception:
+            app.logger.exception("Database health check failed")
+            database_status = "error"
+
     return jsonify({
-        "status": "success",
-        "message": "Next Generation Healthcare API is running!"
+        "status": "ok",
+        "model_loaded": model is not None,
+        "database": database_status,
     })
 
 
-# ==================================================
-# 5. DATABASE HEALTH CHECK
-# ==================================================
-
-@app.get("/api/health")
-def health_check():
-    if not DATABASE_URL:
-        return error_response("DATABASE_URL is missing.", 500)
-
-    try:
-        with psycopg.connect(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
-
-        return jsonify({
-            "status": "success",
-            "database": "connected"
-        })
-
-    except Exception:
-        app.logger.exception("Database health check failed")
-        return error_response("Database connection failed.", 500)
-
-
-# ==================================================
-# 6. FETCH PATIENT READINGS
-# ==================================================
-
-
+# Latest readings and saved AI predictions
 @app.get("/api/readings")
 def get_readings():
     if not DATABASE_URL:
-        return error_response("DATABASE_URL is missing.", 500)
+        return error_response("DATABASE_URL is not configured.", 500)
 
     limit = request.args.get("limit", default=100, type=int)
     offset = request.args.get("offset", default=0, type=int)
@@ -186,7 +155,7 @@ def get_readings():
     offset = max(0, offset or 0)
 
     try:
-        with psycopg.connect(DATABASE_URL) as conn:
+        with psycopg.connect(DATABASE_URL, connect_timeout=10) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT COUNT(*) FROM public.patient_readings"
@@ -199,10 +168,11 @@ def get_readings():
                            speed, distance, spo2, predicted_class,
                            class_0_probability, class_1_probability
                     FROM public.patient_readings
-                    ORDER BY created_at DESC NULLS LAST, reading_id DESC
+                    ORDER BY created_at DESC NULLS LAST,
+                             reading_id DESC
                     LIMIT %s OFFSET %s
                     """,
-                    (limit, offset)
+                    (limit, offset),
                 )
 
                 columns = [column.name for column in cur.description]
@@ -211,10 +181,12 @@ def get_readings():
                     for row in cur.fetchall()
                 ]
 
-        for row in rows:
-            for key, value in row.items():
-                if isinstance(value, (date, datetime)):
-                    row[key] = value.isoformat()
+        rows = [
+            {key: json_safe(value) for key, value in row.items()}
+            for row in rows
+        ]
+
+        latest = rows[0] if rows else None
 
         return jsonify({
             "status": "success",
@@ -222,270 +194,171 @@ def get_readings():
             "count": len(rows),
             "limit": limit,
             "offset": offset,
-            "readings": rows
+            "latest": latest,
+            "readings": rows,
         })
 
     except Exception:
-        app.logger.exception("Failed to fetch patient readings")
+        app.logger.exception("Failed to fetch readings")
         return error_response("Could not fetch patient readings.", 500)
 
-# ==================================================
-# 7. LIST API ROUTES
-# ==================================================
 
-@app.get("/api/routes")
-def list_routes():
-    routes = []
-
-    for rule in app.url_map.iter_rules():
-        methods = sorted(
-            method for method in rule.methods
-            if method not in ("HEAD", "OPTIONS")
-        )
-
-        routes.append({
-            "path": rule.rule,
-            "methods": methods
-        })
-
-    return jsonify({"routes": routes})
-
-
-# ==================================================
-# 8. AI PREDICTION
-# ==================================================
-
+# Run a new AI prediction from submitted measurements
 @app.post("/api/predict")
 def predict():
     try:
-        original_df = parse_measurements(
-            request.get_json(silent=True)
-        )
+        data = request.get_json(silent=True) or {}
+        measurements, model_input = prepare_input(data)
 
-        model_input = prepare_input(original_df)
-        prediction = int(model.predict(model_input)[0])
+        predicted_class = int(model.predict(model_input)[0])
+        probabilities = get_probabilities(model_input)
 
         return jsonify({
             "status": "success",
-            "predicted_class": prediction,
-            "class_probabilities": get_class_probabilities(model_input),
-            "notice": (
-                "Experimental prediction from a synthetic-data model; "
-                "not a medical diagnosis."
-            )
+            "predicted_class": predicted_class,
+            "prediction": predicted_class,
+            "measurements": measurements.iloc[0].to_dict(),
+            **probabilities,
         })
 
-    except KeyError as exc:
-        return error_response(
-            f"Missing measurement: {exc.args[0]}"
-        )
-
-    except (TypeError, ValueError) as exc:
-        return error_response(str(exc))
-
+    except ValueError as error:
+        return error_response(str(error))
     except Exception:
         app.logger.exception("Prediction failed")
-        return error_response("Prediction failed.", 500)
+        return error_response("AI prediction failed.", 500)
 
 
-# ==================================================
-# 9. SHAP EXPLANATION
-# ==================================================
-
+# Explain the prediction using SHAP
 @app.post("/api/explain")
-def explain_prediction():
+def explain():
     try:
-        original_df = parse_measurements(
-            request.get_json(silent=True)
-        )
+        data = request.get_json(silent=True) or {}
+        measurements, model_input = prepare_input(data)
 
-        model_input = prepare_input(original_df)
-        prediction = int(model.predict(model_input)[0])
-
-        # TreeExplainer supports tree-based models such as
-        # Decision Tree and Random Forest.
+        predicted_class = int(model.predict(model_input)[0])
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(model_input)
 
         if isinstance(shap_values, list):
-            class_index = list(model.classes_).index(prediction)
-            contributions = np.asarray(
-                shap_values[class_index]
-            )[0]
-
+            class_index = list(model.classes_).index(predicted_class)
+            values = np.asarray(shap_values[class_index]).reshape(-1)
         else:
-            contributions = np.asarray(shap_values)
+            values = np.asarray(shap_values)
 
-            if contributions.ndim == 3:
-                class_index = list(model.classes_).index(prediction)
-                contributions = contributions[0, :, class_index]
-
-            elif contributions.ndim == 2:
-                contributions = contributions[0]
-
+            # Some SHAP versions return:
+            # samples x features x classes
+            if values.ndim == 3:
+                class_index = list(model.classes_).index(predicted_class)
+                values = values[0, :, class_index]
             else:
-                contributions = contributions.reshape(-1)
+                values = values.reshape(-1)
 
-        explanation = {
-            feature: float(value)
-            for feature, value in zip(FEATURES, contributions)
-        }
+        contributions = [
+            {"feature": feature, "shap_value": float(value)}
+            for feature, value in zip(FEATURES, values)
+        ]
+        contributions.sort(
+            key=lambda item: abs(item["shap_value"]),
+            reverse=True,
+        )
 
         return jsonify({
             "status": "success",
-            "predicted_class": prediction,
-            "shap_values": explanation,
-            "notice": (
-                "Experimental explanation using synthetic data; "
-                "not a medical diagnosis."
-            )
+            "predicted_class": predicted_class,
+            "explanations": contributions,
+            "features": contributions,
         })
 
-    except KeyError as exc:
-        return error_response(
-            f"Missing measurement: {exc.args[0]}"
-        )
-
-    except (TypeError, ValueError) as exc:
-        return error_response(str(exc))
-
+    except ValueError as error:
+        return error_response(str(error))
     except Exception:
         app.logger.exception("SHAP explanation failed")
-        return error_response(
-            "Could not generate explanation. Check model compatibility.",
-            500
-        )
+        return error_response("Could not generate SHAP explanation.", 500)
 
 
-# ==================================================
-# 10. COUNTERFACTUAL EXPLANATION
-# ==================================================
-
+# Basic counterfactual: search dataset rows with a different predicted class
 @app.post("/api/counterfactual")
-def counterfactual_prediction():
+def counterfactual():
     try:
-        original_df = parse_measurements(
-            request.get_json(silent=True)
-        )
+        data = request.get_json(silent=True) or {}
+        measurements, model_input = prepare_input(data)
 
-        original_input = prepare_input(original_df)
-        original_class = int(model.predict(original_input)[0])
-        target_class = 1 - original_class
+        current_class = int(model.predict(model_input)[0])
+        target_class = data.get("target_class", 1 - current_class)
 
-        if not os.path.exists(DATASET_PATH):
-            return error_response("Counterfactual dataset not found.", 500)
+        try:
+            target_class = int(target_class)
+        except (TypeError, ValueError):
+            return error_response("target_class must be an integer.")
+
+        if not DATASET_PATH.exists():
+            return error_response("Counterfactual dataset was not found.", 500)
 
         dataset = pd.read_csv(DATASET_PATH)
-        X = dataset[FEATURES]
-
-        if X.isnull().any().any():
+        if not all(feature in dataset.columns for feature in FEATURES):
             return error_response(
-                "Counterfactual dataset contains missing values.", 500
+                "Dataset does not contain all required model features.", 500
             )
 
-        rng = np.random.default_rng(42)
-        lower = X.quantile(0.05).to_numpy()
-        upper = X.quantile(0.95).to_numpy()
+        dataset = dataset[FEATURES].apply(pd.to_numeric, errors="coerce")
+        dataset = dataset.dropna()
 
-        candidates = pd.DataFrame(
-            rng.uniform(
-                lower,
-                upper,
-                size=(20000, len(FEATURES))
-            ),
-            columns=FEATURES
+        if dataset.empty:
+            return error_response("No usable dataset rows were found.", 500)
+
+        candidates = dataset.copy()
+        candidate_input = (
+            scaler.transform(candidates)
+            if REQUIRES_SCALING
+            else candidates
         )
-
-        candidate_input = prepare_input(candidates)
-        candidate_predictions = model.predict(candidate_input)
-
+        predictions = model.predict(candidate_input)
         candidates = candidates.loc[
-            candidate_predictions == target_class
+            np.asarray(predictions) == target_class
         ].copy()
 
         if candidates.empty:
             return error_response(
-                "No counterfactual candidate was found.", 404
+                f"No example found for target class {target_class}.", 404
             )
 
-        # Standardize only for distance calculation, not prediction.
-        distance_scaler = StandardScaler().fit(X)
-
-        original_distance = distance_scaler.transform(original_df)
-        candidate_distances = distance_scaler.transform(candidates)
-
-        distances = np.sqrt(
-            ((candidate_distances - original_distance) ** 2).sum(axis=1)
-        )
-
-        best_index = int(np.argmin(distances))
-        counterfactual = candidates.iloc[best_index]
-
-        counterfactual_df = pd.DataFrame(
-            [counterfactual],
-            columns=FEATURES
-        )
-
-        counterfactual_input = prepare_input(counterfactual_df)
-        counterfactual_class = int(
-            model.predict(counterfactual_input)[0]
-        )
-
-        if counterfactual_class != target_class:
-            raise RuntimeError("Counterfactual verification failed.")
+        # Return the closest dataset example by standardized distance.
+        reference = measurements.iloc[0].astype(float)
+        scale = dataset.std().replace(0, 1).fillna(1)
+        distances = ((candidates - reference) / scale).pow(2).sum(axis=1)
+        best_index = distances.idxmin()
+        alternative = candidates.loc[best_index].to_dict()
 
         changes = {
             feature: {
-                "original": float(original_df.iloc[0][feature]),
-                "counterfactual": float(counterfactual[feature]),
-                "change": float(
-                    counterfactual[feature]
-                    - original_df.iloc[0][feature]
-                )
+                "current": float(reference[feature]),
+                "suggested": float(alternative[feature]),
             }
             for feature in FEATURES
         }
 
         return jsonify({
             "status": "success",
-            "original_prediction": original_class,
-            "original_class_probabilities": get_class_probabilities(
-                original_input
+            "current_class": current_class,
+            "target_class": target_class,
+            "counterfactual": alternative,
+            "changes": changes,
+            "note": (
+                "Experimental dataset-based example only; "
+                "not a clinical recommendation."
             ),
-            "counterfactual_prediction": counterfactual_class,
-            "counterfactual_class_probabilities": get_class_probabilities(
-                counterfactual_input
-            ),
-            "counterfactual_values": {
-                feature: float(counterfactual[feature])
-                for feature in FEATURES
-            },
-            "feature_changes": changes,
-            "standardized_distance": float(distances[best_index]),
-            "notice": (
-                "Experimental counterfactual from synthetic data; "
-                "not medical advice."
-            )
         })
 
-    except KeyError as exc:
-        return error_response(
-            f"Missing measurement: {exc.args[0]}"
-        )
-
-    except (TypeError, ValueError) as exc:
-        return error_response(str(exc))
-
+    except ValueError as error:
+        return error_response(str(error))
     except Exception:
         app.logger.exception("Counterfactual generation failed")
-        return error_response(
-            "Counterfactual generation failed.", 500
-        )
+        return error_response("Could not generate counterfactual.", 500)
 
-
-# ==================================================
-# 11. RUN FLASK
-# ==================================================
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        debug=False,
+    )
